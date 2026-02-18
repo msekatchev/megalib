@@ -29,6 +29,8 @@
 // Standard libs:
 #include <limits>
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 using namespace std;
 
 // ROOT libs:
@@ -1241,6 +1243,138 @@ double MDDetector::GetEnergyResolution(const double Energy, const MVector& Posit
   }
 
   return 0.0;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+bool MDDetector::EstimateEnergyResolution(const vector<double>& Energies,
+                                          const vector<double>& Widths,
+                                          const bool WidthsAreFWHM)
+{
+  //! Fit a Gaussian model sigma(E)^2 = a + b*E + c*E^2 from measured line widths.
+
+  if (Energies.size() != Widths.size()) {
+    merr<<"Energy resolution estimate failed for detector "<<m_Name<<": "
+        <<"number of energies ("<<Energies.size()<<") does not match number of widths ("<<Widths.size()<<")"<<endl;
+    return false;
+  }
+
+  if (Energies.size() < 2) {
+    merr<<"Energy resolution estimate failed for detector "<<m_Name<<": "
+        <<"at least two data points are required"<<endl;
+    return false;
+  }
+
+  vector<pair<double, double>> Samples;
+  Samples.reserve(Energies.size());
+
+  const double FWHMToSigma = 1.0/2.3548200450309493;
+
+  for (unsigned int i = 0; i < Energies.size(); ++i) {
+    if (Energies[i] <= 0.0) {
+      merr<<"Energy resolution estimate failed for detector "<<m_Name<<": "
+          <<"all energies must be > 0 keV"<<endl;
+      return false;
+    }
+    if (Widths[i] <= 0.0) {
+      merr<<"Energy resolution estimate failed for detector "<<m_Name<<": "
+          <<"all widths must be > 0 keV"<<endl;
+      return false;
+    }
+
+    double Sigma = Widths[i];
+    if (WidthsAreFWHM == true) {
+      Sigma *= FWHMToSigma;
+    }
+
+    Samples.emplace_back(Energies[i], Sigma*Sigma);
+  }
+
+  sort(Samples.begin(), Samples.end(), [](const pair<double, double>& A, const pair<double, double>& B) {
+    return A.first < B.first;
+  });
+
+  long double S00 = 0.0;
+  long double S01 = 0.0;
+  long double S02 = 0.0;
+  long double S11 = 0.0;
+  long double S12 = 0.0;
+  long double S22 = 0.0;
+
+  long double T0 = 0.0;
+  long double T1 = 0.0;
+  long double T2 = 0.0;
+
+  for (unsigned int i = 0; i < Samples.size(); ++i) {
+    const long double E = Samples[i].first;
+    const long double Y = Samples[i].second;
+    const long double E2 = E*E;
+
+    S00 += 1.0;
+    S01 += E;
+    S02 += E2;
+    S11 += E2;
+    S12 += E2*E;
+    S22 += E2*E2;
+
+    T0 += Y;
+    T1 += E*Y;
+    T2 += E2*Y;
+  }
+
+  const long double D = S00*(S11*S22 - S12*S12) -
+                        S01*(S01*S22 - S12*S02) +
+                        S02*(S01*S12 - S11*S02);
+
+  long double A = 0.0;
+  long double B = 0.0;
+  long double C = 0.0;
+
+  if (fabs((double) D) < 1.0e-20 || Samples.size() == 2) {
+    const long double Den = S00*S11 - S01*S01;
+    if (fabs((double) Den) < 1.0e-20) {
+      merr<<"Energy resolution estimate failed for detector "<<m_Name<<": "
+          <<"cannot solve fit because energies are degenerate"<<endl;
+      return false;
+    }
+
+    A = (T0*S11 - T1*S01)/Den;
+    B = (S00*T1 - S01*T0)/Den;
+    C = 0.0;
+  } else {
+    A = (T0*(S11*S22 - S12*S12) -
+         S01*(T1*S22 - S12*T2) +
+         S02*(T1*S12 - S11*T2))/D;
+
+    B = (S00*(T1*S22 - S12*T2) -
+         T0*(S01*S22 - S12*S02) +
+         S02*(S01*T2 - T1*S02))/D;
+
+    C = (S00*(S11*T2 - T1*S12) -
+         S01*(S01*T2 - T1*S02) +
+         T0*(S01*S12 - S11*S02))/D;
+  }
+
+  m_EnergyResolutionPeak1 = MFunction();
+  m_EnergyResolutionWidth1 = MFunction();
+  m_EnergyResolutionPeak2 = MFunction();
+  m_EnergyResolutionWidth2 = MFunction();
+  m_EnergyResolutionRatio = MFunction();
+
+  for (unsigned int i = 0; i < Samples.size(); ++i) {
+    const double E = Samples[i].first;
+    const double Sigma2 = max(0.0, (double) (A + B*E + C*E*E));
+    const double Sigma = sqrt(Sigma2);
+
+    m_EnergyResolutionPeak1.Add(E, E);
+    m_EnergyResolutionWidth1.Add(E, Sigma);
+  }
+
+  m_EnergyResolutionType = c_EnergyResolutionTypeGauss;
+
+  return true;
 }
 
 

@@ -259,11 +259,39 @@ echo ""
 bash ${MEGALIB}/config/configure_checkpath exe root
 FoundROOTExe=$?;
 if [ $FoundROOTExe -eq 0 ]; then
+  # Recovery path: try ROOTSYS first, then auto-discover in $MEGALIB/external
+  if [ "${ROOTSYS}" != "" ] && [ -x "${ROOTSYS}/bin/root" ]; then
+    export PATH="${ROOTSYS}/bin:${PATH}"
+    if [ -d "${ROOTSYS}/lib" ]; then
+      export LD_LIBRARY_PATH="${ROOTSYS}/lib:${LD_LIBRARY_PATH}"
+      export DYLD_LIBRARY_PATH="${ROOTSYS}/lib:${DYLD_LIBRARY_PATH}"
+    fi
+  else
+    AutoRootConfig=$(find "${MEGALIB}/external" -type f -name root-config -perm -u+x 2>/dev/null | head -n 1)
+    if [ "${AutoRootConfig}" != "" ]; then
+      AutoRootBin=$(dirname "${AutoRootConfig}")
+      AutoRootSys=$(cd "${AutoRootBin}/.." && pwd)
+      export ROOTSYS="${AutoRootSys}"
+      export PATH="${AutoRootBin}:${PATH}"
+      if [ -d "${ROOTSYS}/lib" ]; then
+        export LD_LIBRARY_PATH="${ROOTSYS}/lib:${LD_LIBRARY_PATH}"
+        export DYLD_LIBRARY_PATH="${ROOTSYS}/lib:${DYLD_LIBRARY_PATH}"
+      fi
+      echo "Auto-detected ROOT in ${ROOTSYS}"
+    fi
+  fi
+
+  bash ${MEGALIB}/config/configure_checkpath exe root
+  FoundROOTExe=$?;
+fi
+if [ $FoundROOTExe -eq 0 ]; then
   echo "ROOT program not found or not executable!"
   echo ""
   echo "--> If ROOT is not installed, then install it first!"
   echo "--> If ROOT is installed, make sure that your PATH variable contains a folder which contains root,"
   echo "    that you have read access to the ROOT directory, and that ROOT is executable"
+  echo "--> If ROOT is installed in ${MEGALIB}/external, then source this script first:"
+  echo "    source ${MEGALIB}/bin/source-megalib.sh"
   echo "--> If ROOT is installed, the PATH is set, and you run this script via sudo, then you have to make"
   echo "    sure you have set the PATH globally and not just for the user as the PATH variable might not be"
   echo "    transferred via sudo"

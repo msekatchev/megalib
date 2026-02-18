@@ -146,6 +146,14 @@ class MDDetector
   //! Returns an average energy resolution width
   virtual double GetEnergyResolution(const double Energy, const MVector& PositionInDetector = c_NullVector) const;
 
+  //! Estimate a Gaussian energy resolution model from measured peak widths.
+  //! Input energies are in keV and widths are either FWHM or 1-sigma (also keV).
+  //! The fitted model is sigma(E)^2 = a + b*E + c*E^2 and is sampled at the
+  //! supplied energies to populate the detector resolution table.
+  virtual bool EstimateEnergyResolution(const vector<double>& Energies,
+                                        const vector<double>& Widths,
+                                        const bool WidthsAreFWHM = true);
+
   virtual void SetEnergyCalibration(const MFunction& EnergyCalibration);
 
   virtual void SetTimeResolution(const double Energy, const double Sigma);
